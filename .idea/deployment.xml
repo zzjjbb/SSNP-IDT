@@ -1,14 +1,23 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData">
+  <component name="PublishConfigData" autoUpload="Always" serverName="cisl_ssnp">
     <serverData>
-      <paths name="cisl@cisllab.imwork.net:22">
+      <paths name="cisl_ssnp">
         <serverdata>
           <mappings>
-            <mapping local="$PROJECT_DIR$" web="/" />
+            <mapping deploy="project/ssnp" local="$PROJECT_DIR$" />
+            <mapping deploy="data/ssnp" local="$PROJECT_DIR$/../../data/ssnp" />
+          </mappings>
+        </serverdata>
+      </paths>
+      <paths name="cisllab">
+        <serverdata>
+          <mappings>
+            <mapping deploy="" local="" web="/" />
           </mappings>
         </serverdata>
       </paths>
     </serverData>
+    <option name="myAutoUpload" value="ALWAYS" />
   </component>
 </project>
