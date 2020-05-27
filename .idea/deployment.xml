@@ -1,7 +1,14 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <project version="4">
-  <component name="PublishConfigData" serverName="cisl_ssnp">
+  <component name="PublishConfigData" autoUpload="Always" serverName="BU SCC2" createEmptyFolders="true" autoUploadExternalChanges="true">
     <serverData>
+      <paths name="BU SCC2">
+        <serverdata>
+          <mappings>
+            <mapping deploy="ssnp/code_sync" local="$PROJECT_DIR$" />
+          </mappings>
+        </serverdata>
+      </paths>
       <paths name="cisl_ssnp">
         <serverdata>
           <mappings>
@@ -18,5 +25,6 @@
         </serverdata>
       </paths>
     </serverData>
+    <option name="myAutoUpload" value="ALWAYS" />
   </component>
 </project>
