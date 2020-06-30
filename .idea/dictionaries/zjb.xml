@@ -2,8 +2,10 @@
   <dictionary name="zjb">
     <words>
       <w>dtype</w>
+      <w>ifft</w>
       <w>mathematica</w>
       <w>paclets</w>
+      <w>pycuda</w>
       <w>ssnp</w>
       <w>tensorflow</w>
     </words>
