@@ -3,7 +3,7 @@ from functools import lru_cache
 from pycuda import gpuarray, driver as cuda
 
 
-def param_check(**kwargs):
+def param_check(*, _expected_type=gpuarray.GPUArray, **kwargs):
     name0 = None
     shape0 = None
     for name in kwargs:
@@ -11,8 +11,8 @@ def param_check(**kwargs):
         if arr is None:
             continue
         # type check
-        if not isinstance(arr, gpuarray.GPUArray):
-            raise TypeError(f"'{name}' is not a GPUArray")
+        if not isinstance(arr, _expected_type):
+            raise TypeError(f"'{name}' is not a {_expected_type}")
         # shape check
         if name0 is None:
             name0 = name
@@ -53,12 +53,11 @@ def pop_pycuda_context():
 
 
 class Config:
-    _res = None
-    _n0 = 1.
-    _xyz = None
-    _lambda = None
-
     def __init__(self):
+        self._res = None
+        self._n0 = 1.
+        self._xyz = None
+        self._lambda = None
         self._callbacks = []
 
     @property
@@ -122,8 +121,7 @@ class Config:
 
     def _try_n0fix_res(self, new_value):
         try:
-            value = (res_i / self._n0 * new_value for res_i in self.res)
-            self._res = tuple(float(res_i) for res_i in value)
+            self._res = tuple([float(res_i / self._n0 * new_value) for res_i in self.res])
         except AttributeError:
             pass
 
@@ -143,11 +141,6 @@ class Config:
         for attr in ('n0', 'xyz', 'lambda0', 'res'):  # the order is important
             if value := kwargs.pop(attr, None):
                 setattr(self, attr, value)
-        # for key in kwargs:
-        #     if key == "res":
-        #         self.res = kwargs[key]
-        #     else:
-        #         raise TypeError(f"'{key}' is invalid as a configuration item")
 
     def __copy__(self):
         cp = type(self)()
