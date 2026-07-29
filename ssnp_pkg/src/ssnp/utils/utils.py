@@ -47,9 +47,11 @@ def pop_pycuda_context():
     ctx = cuda.Context.get_current()
     ctx.pop()
     __context_disabled = True
-    yield ctx
-    __context_disabled = False
-    ctx.push()
+    try:
+        yield ctx
+    finally:
+        ctx.push()
+        __context_disabled = False
 
 
 class Config:
@@ -87,15 +89,17 @@ class Config:
         # if self._res is not None:
         #     warn(f"resetting res value from {self._res}")
         value = tuple(float(res_i) for res_i in value)
+        if len(value) != 3:
+            raise ValueError("res can only be assigned with an iterable of 3 floats")
         if self._res != value:
-            assert len(value) == 3
             self._update(attr='res', old=self._res, new=value)
             self._res = value
 
     @xyz.setter
     def xyz(self, value):
         value = tuple(float(size_i) for size_i in value)
-        assert len(value) == 3
+        if len(value) != 3:
+            raise ValueError("xyz can only be assigned with an iterable of 3 floats")
         self._xyz = value
         self._try_calc_res()
 
@@ -127,7 +131,8 @@ class Config:
 
     def register_updater(self, updater):
         if updater is not None:
-            assert callable(updater), "updater function is not callable"
+            if not callable(updater):
+                raise ValueError("updater function is not callable")
             self._callbacks.append(updater)
 
     def clear_updater(self):

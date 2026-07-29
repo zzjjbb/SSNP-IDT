@@ -27,9 +27,11 @@ class TestConfig(TestCase):
         for pix in config.xyz:
             self.assertIsInstance(pix, float)
         # bad assignment
-        with self.assertRaises(AssertionError):
-            config.xyz = (1, 2)
-        with self.assertRaisesRegex(ValueError, 'could not convert string to float'):
+        for attr in ['xyz', 'res']:
+            for bad_val in [[1,2], (3, 4, 5, 6)]:
+                with self.assertRaisesRegex(ValueError, "can only be assigned with an iterable of 3 floats"):
+                    setattr(config, attr, bad_val)
+        with self.assertRaisesRegex(ValueError, "could not convert string to float"):
             config.xyz = 'abc'
         with self.assertRaisesRegex(TypeError, "not iterable"):
             config.xyz = 1
