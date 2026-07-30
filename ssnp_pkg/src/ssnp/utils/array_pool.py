@@ -13,7 +13,8 @@ class ArrayPool[T]:
     allocated_count: int
 
     def __init__(
-        self, prototype: T, like_allocator: Callable[[T], T], unique_id: Callable[[T], Any] = id
+        self, prototype: T, like_allocator: Callable[[T], T], unique_id: Callable[[T], Any] = id,
+        recycle_hook = None
     ):
         self._pool = []
         self._id_record = set()
@@ -21,6 +22,7 @@ class ArrayPool[T]:
         self.prototype = prototype
         self.allocator = like_allocator
         self.allocated_count = 0
+        self.recycle_hook = recycle_hook
 
     def get(self):
         if self._pool:
@@ -32,15 +34,18 @@ class ArrayPool[T]:
             logging.info(f"get array times: {self.allocated_count}")
             return self.allocator(self.prototype)
 
-    def recycle(self, arr):
-        # sanity check
+    def _check(self, arr):
         param_check(prototype=self.prototype, recycled=arr, _expected_type=type(self.prototype))
         if self.prototype.dtype != arr.dtype:
             raise ValueError(f"recycled array dtype {arr.dtype} is different from "
                              f"the prototype dtype {self.prototype.dtype}")
         if self._get_id(arr) in self._id_record:
-            raise ValueError(f"duplicate array found in pool")
-        # check passed
+            raise ValueError(f"duplicated array found in pool")
+
+    def recycle(self, arr):
+        self._check(arr)
+        if self.recycle_hook is not None:
+            self.recycle_hook(arr)
         self._pool.append(arr)
         self._id_record.add(self._get_id(arr))
 
@@ -68,9 +73,18 @@ class ManagedObj(BaseObjectProxy):
     def __init__(self, obj, pool: Union[ArrayPool, weakref.ReferenceType[ArrayPool]],
                  method_wrapper: Literal['chainable', 'descriptor', None] = None):
         def recycle_obj():
-            # If pool is alive, re-wrap obj as a new proxy and let pool recycle it
-            if (p := pool_ref()) is not None:
-                p.recycle(cls(obj, p, method_wrapper))
+            new_obj = None
+            try:
+                # If pool is alive, re-wrap obj as a new proxy and let pool recycle it
+                if (p := pool_ref()) is not None:
+                    new_obj = cls(obj, p, method_wrapper)
+                    p.recycle(new_obj)
+            except Exception as e:
+                # Leak the obj at failure to prevent infinite loop
+                logging.error(f"recycling ManagedObj failed with error {e!r}")
+                if new_obj is not None:
+                    new_obj._self_finalizer.detach()
+                raise
 
         super().__init__(obj)
         cls = type(self)
@@ -115,4 +129,11 @@ class ManagedArrayPool(ArrayPool):
         super().__init__(*args, **kwargs)
         raw_allocator = self.allocator
         self_wr = weakref.ref(self)
+        self.method_wrapper = method_wrapper
         self.allocator = lambda x: ManagedObj(raw_allocator(x), self_wr, method_wrapper)
+
+    def manage(self, raw_arr):
+        if isinstance(raw_arr, ManagedObj):
+            raise ValueError(f"object is already managed")
+        self._check(raw_arr)
+        return ManagedObj(raw_arr, self, self.method_wrapper)

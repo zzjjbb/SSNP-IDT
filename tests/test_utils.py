@@ -47,11 +47,22 @@ class TestConfig(TestCase):
 class MockArray:
     id_counter = 0
     freed_obj = 0
+    data_used = False
+
+    def __init__(self, shape, dtype):
+        self.shape = shape
+        self.dtype = dtype
+        self.unique_id = self.get_unique_id()
+        self.data_used = False
+
+    def use(self):
+        self.data_used = True
 
     @classmethod
     def get_unique_id(cls):
+        unique_id = cls.id_counter
         cls.id_counter += 1
-        return cls.id_counter
+        return unique_id
 
     @classmethod
     def bump_freed(cls):
@@ -60,11 +71,6 @@ class MockArray:
     @classmethod
     def clear_counters(cls):
         cls.id_counter = cls.freed_obj = 0
-
-    def __init__(self, shape, dtype):
-        self.shape = shape
-        self.dtype = dtype
-        self.unique_id = self.get_unique_id()
 
     @classmethod
     def empty_like(cls, other):
@@ -84,7 +90,7 @@ class MockArray:
         return self
 
 
-class TestArrayPool(TestCase):
+class TestManagedArrayPool(TestCase):
     def test_proxy(self):
         def helper(wrapper, expected):
             def type_assertion(i):
@@ -129,14 +135,17 @@ class TestArrayPool(TestCase):
         helper('descriptor', [True, True, True, True, True, True, False])
 
     def test_pool(self):
+        def clear_arr(arr: MockArray):
+            arr.data_used = False
+
         arr_proto = MockArray([1024, 1024], float)
         MockArray.clear_counters()
         array_pool = ManagedArrayPool(arr_proto, MockArray.empty_like, unique_id=lambda arr: arr.unique_id,
-                                      method_wrapper='chainable')
-
+                                      method_wrapper='chainable', recycle_hook=clear_arr)
         # Test basic get
         self.assertEqual(array_pool.allocated_count, 0)
         a = array_pool.get()
+        a.use()
         self.assertEqual(array_pool.allocated_count, 1)
         self.assertIsInstance(a, MockArray)
         self.assertIsInstance(a, ManagedObj)
@@ -147,6 +156,8 @@ class TestArrayPool(TestCase):
         a.dispose()
         self.assertEqual(len(array_pool._pool), 1)
         self.assertEqual(array_pool.allocated_count, 1)
+        a = array_pool.get()
+        self.assertFalse(a.data_used)
         for i in range(10):
             del a
             a = array_pool.get()
@@ -174,3 +185,16 @@ class TestArrayPool(TestCase):
         self.assertEqual(MockArray.freed_obj, 1)
         del a
         self.assertEqual(MockArray.freed_obj, 2)
+
+        # Test manage
+        raw_arr = MockArray([1024, 1024], float)
+        array_pool = ManagedArrayPool(arr_proto, MockArray.empty_like, unique_id=lambda arr: arr.unique_id)
+        a = array_pool.manage(raw_arr)
+        self.assertIs(a.__wrapped__, raw_arr)
+        del a
+        a = array_pool.get()
+        self.assertEqual(array_pool.allocated_count, 0)
+        self.assertIs(a.__wrapped__, raw_arr)
+        del a
+        with self.assertRaisesRegex(ValueError, "duplicated"):
+            array_pool.manage(raw_arr)
