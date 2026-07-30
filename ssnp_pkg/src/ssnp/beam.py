@@ -321,16 +321,19 @@ class BeamArray:
     def conj(self):
         if self._u2 is not None:
             raise NotImplementedError("does not support conj op for bi-dir beam (is it meaningful?)")
-        self._fft_funcs.conj(self._u1)
+        self._u1.conj(out=self._u1)
         if self._track:
+            def forward(var):
+                out_var = Var(data=self.array_pool.get()) if var.bound else var
+                var.data.conj(out=out_var.data)
+                return out_var
+
+            def gradient(ug):
+                ug.conj(out=ug)
+                return (ug,)
+
             op = Operation(Var(), Var(), "conj")
-            op.set_funcs(
-                forward=lambda var: Var(
-                    data=self._fft_funcs.conj(var.data,
-                                              out=self.array_pool.get() if var.bound else None)
-                ),
-                gradient=lambda ug: [self._fft_funcs.conj(ug)]
-            )
+            op.set_funcs(forward, gradient)
             self.tape.append(op)
         return self
 
