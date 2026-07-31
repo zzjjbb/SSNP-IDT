@@ -41,18 +41,15 @@ class DataMissing(Exception):
 
 @dataclass
 class Operation:
-    vars_in: Union[Variable, Sequence[Variable]]
-    vars_out: Union[Variable, Sequence[Variable]]
+    vars_in: Sequence[Variable]
+    vars_out: Sequence[Variable]
     name: str = None
-    taped_len = None
-    _taped_out: Optional[list[Variable]] = field(default=None, init=False, repr=False)
-    _taped_in_all_saved: bool = field(default=False, init=False, repr=False)
 
     # vars_out_saved = True
     # tag_pos = {}
 
     def __post_init__(self):
-        tl = [0, 0]
+        tl_in = tl_out = 0
         if isinstance(self.vars_in, Variable):
             self.vars_in = (self.vars_in,)
         if isinstance(self.vars_out, Variable):
@@ -60,12 +57,12 @@ class Operation:
 
         for v in self.vars_in:
             v.bound = True
-            tl[0] += not v.external
+            tl_in += not v.external
         for v in self.vars_out:
             v.bound = True
-            tl[1] += not v.external
-        self.update_saved()
-        self.taped_len = tl
+            tl_out += not v.external
+        self.update_saved()  # defines _taped_out, _taped_in_all_saved
+        self.taped_len = tl_in, tl_out
 
     def backprop(self, *grad_out_data, **kwargs):
         # assert len(grad_out_data) == self.taped_len[1], "grad_out length error"
