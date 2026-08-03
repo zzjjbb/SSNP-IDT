@@ -11,7 +11,7 @@ from contextlib import contextmanager
 from pycuda import gpuarray
 from pycuda.gpuarray import GPUArray
 from ssnp import calc
-from ssnp.utils import param_check, Config, ArrayPool
+from ssnp.utils import param_check, Config, ManagedArrayPool
 from ssnp.utils.auto_gradient import Variable as Var, Operation, OperationTape, DataMissing
 from ssnp.ops import MulOp, FourierMulOp
 import logging
@@ -43,29 +43,29 @@ class BeamArray:
             return gpuarray.to_gpu_async(u, stream=stream)  # async version of copy()
 
         self._u1 = to_gpu(u1, "u1")
-        shape = self._u1.shape
-        if len(shape) == 2:
+        full_shape = self._u1.shape
+        if len(full_shape) == 2:
             self.batch = None
-        elif len(shape) == 3:
-            self.batch = shape[0]
+        elif len(full_shape) == 3:
+            self.batch = full_shape[0]
         else:
-            raise ValueError(f"cannot process {len(shape)}-D data with shape {shape}")
+            raise ValueError(f"cannot process {len(full_shape)}-D data with shape {full_shape}")
+        self.shape = full_shape[-2:]
+        self.array_pool = ManagedArrayPool(
+            self._u1, gpuarray.empty_like, unique_id=lambda arr: arr.ptr, method_wrapper='chainable')
+        self.tape = OperationTape(total_ops)
+        self._fft_funcs = calc.get_funcs(self._u1, stream=stream)
+        self.stream = stream
 
         if u2 is not None:
-            self._u2 = to_gpu(u2, "u2")
-            if self._u2.shape != shape:
-                raise ValueError(f"u1 shape {shape} cannot match u2 shape {self._u2.shape}")
             if relation not in {BeamArray.DERIVATIVE, BeamArray.BACKWARD}:
                 raise ValueError("unknown relation type")
             self.relation = relation
+            if u2.shape != full_shape:
+                raise ValueError(f"u1 shape {full_shape} cannot match u2 shape {u2.shape}")
+            self._u2 = self.array_pool.manage(to_gpu(u2, "u2"))
         else:
             self._u2 = None
-        self.tape = OperationTape(total_ops)
-        self.shape = shape[-2:]
-        self._fft_funcs = calc.get_funcs(self._u1, stream=stream)
-        self.array_pool = ArrayPool(self._u1, gpuarray.empty_like,
-                                    unique_id=lambda arr: arr.ptr)
-        self.stream = stream
 
     @property
     def multiplier(self):
@@ -96,8 +96,6 @@ class BeamArray:
                     self.merge_prop()
 
         self._config.register_updater(update)
-
-
 
     def apply_grad(self, grad1, grad2=None):
         if self._track:
@@ -185,7 +183,7 @@ class BeamArray:
             self.split_prop()
         if value is None:
             if self._u2 is not None:
-                self.array_pool.recycle(self._u2)
+                self._u2.dispose()
                 self._u2 = None
         else:
             if self._u2 is None:
@@ -205,7 +203,7 @@ class BeamArray:
             self.merge_prop()
         if value is None:
             if self._u2 is not None:
-                self.array_pool.recycle(self._u2)
+                self._u2.dispose()
                 self._u2 = None
         else:
             if self._u2 is None:
@@ -299,7 +297,8 @@ class BeamArray:
         return self
 
     def __iadd__(self, other, sign=1):  # TODO: check if this is correct for recalculation in gradient computation
-        assert isinstance(other, BeamArray)
+        if not isinstance(other, BeamArray):
+            raise TypeError(f"unsupported operand type(s) for +=: 'BeamArray' and '{type(other).__qualname__}'")
         param_check(self=self._u1, add=other._u1)
         u_self = (self._u1,) if self._u2 is None else (self._u1, self._u2)
         u_other = (other._u1,) if other._u2 is None else (other._u1, other._u2)
@@ -414,8 +413,8 @@ class BeamArray:
             op = Operation(Var(), [], "midt_batch_mse")
             op.gradient = lambda: (u1g,)
             self.tape.append(op)
-        self.array_pool.recycle(batch_abs)
-        self.array_pool.recycle(summed_abs)
+        batch_abs.dispose()
+        summed_abs.dispose()
         return loss
 
     def _parse(self, info, dz, n, track):
@@ -533,7 +532,7 @@ class BeamArray:
 
         def clear():
             if u_out.has_data():
-                self.array_pool.recycle(u_out.data)
+                u_out.data.dispose()
 
         op = Operation(vars_in, u_out, "bpm")
         op.set_funcs(forward, gradient, clear)
@@ -573,7 +572,7 @@ class BeamArray:
         def clear():
             for v in u_out:
                 if v.has_data():
-                    self.array_pool.recycle(v.data)
+                    v.data.dispose()
 
         vars_in = [Var('u_in'), Var('ud_in')]
         if n_data is not None:
@@ -601,7 +600,7 @@ class BeamArray:
                         assert out[vi.tag] is None  # not support out container
                         arr_out.append(go)
                     else:
-                        self.array_pool.recycle(go)
+                        go.dispose()
                         arr_out.append(None)  # only a placeholder
                 else:
                     arr_out.append(go)
@@ -614,22 +613,8 @@ class BeamArray:
         #             self.recycle_array(v.data)
         #     return v_in[:lo] + tuple(vars_out[li:])
 
-        # def clear():
-        #     for v in vars_out:
-        #         if v:
-        #             self.recycle_array(v)
-
         li, lo = len(vars_in), len(vars_out)
         op = Operation(vars_in, vars_out, "change")
         op.gradient = gradient
         # op.set_funcs(forward, gradient, clear)
         return op
-
-    # Deprecated alias
-    def recycle_array(self, arr):
-        warn("use BeamArray.array_pool.recycle(arr) instead", DeprecationWarning)
-        self.array_pool.recycle(arr)
-
-    def _get_array(self):
-        warn("use BeamArray.array_pool.get() instead", DeprecationWarning)
-        return self.array_pool.get()
