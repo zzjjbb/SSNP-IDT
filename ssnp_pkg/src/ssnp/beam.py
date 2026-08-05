@@ -13,7 +13,7 @@ from pycuda.gpuarray import GPUArray
 from ssnp import calc
 from ssnp.utils import param_check, Config, ManagedArrayPool
 from ssnp.utils.auto_gradient import Variable as Var, Operation, OperationTape, DataMissing
-from ssnp.ops import MulOp, FourierMulOp
+from ssnp.ops import MulOp, FourierMulOp, MSELossOp
 import logging
 
 
@@ -344,48 +344,13 @@ class BeamArray:
             raise TypeError(f"{type(self).__name__}.mse_loss takes at least 1 argument")
         # mse (and grad) computation
         loss = 0
-        ufg = ubg = None
         if forward is not None:
             loss += calc.reduce_mse(self.forward, forward, self.stream)
-            if self._track:
-                ufg = calc.reduce_mse_grad(self.forward, forward,
-                                           output=self.array_pool.get(), stream=self.stream)
         if backward is not None:
             loss += calc.reduce_mse(self.backward, backward, self.stream)
-            if self._track:
-                ubg = calc.reduce_mse_grad(self.backward, backward,
-                                           output=self.array_pool.get(), stream=self.stream)
         # append mse op to tape
         if self._track:
-            if self._u2 is None:
-                op = Operation(Var('uf'), [], "mse_f")
-                op.gradient = lambda: (ufg,)
-            else:
-                op = Operation([Var('uf'), Var('ub')], [], "mse_fb")
-                if ufg is None:
-                    ufg = self.array_pool.get()
-                    ufg.fill(0, self.stream)
-                if ubg is None:
-                    ubg = self.array_pool.get()
-                    ubg.fill(0, self.stream)
-                op.gradient = lambda: (ufg, ubg)
-            self.tape.append(op)
-        return loss
-
-    def forward_mse_loss(self, measurement):
-        loss = calc.reduce_mse(self.forward, measurement)
-        if self._track:
-            ufg = calc.reduce_mse_grad(self._u1, measurement,
-                                       output=self.array_pool.get(), stream=self.stream)
-            if self._u2 is None:
-                op = Operation(Var(), [], "mse")
-                op.gradient = lambda: (ufg,)
-            else:
-                op = Operation([Var(), Var()], [], "mse")
-                ubg = self.array_pool.get()
-                ubg.fill(0, self.stream)
-                op.gradient = lambda: (ufg, ubg)
-            self.tape.append(op)
+            self.tape.append(MSELossOp(self, forward, backward))
         return loss
 
     def midt_batch_mse_loss(self, measurement):

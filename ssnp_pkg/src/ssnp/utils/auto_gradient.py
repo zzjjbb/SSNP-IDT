@@ -205,15 +205,24 @@ class OperationTape(list):
 
             taped_grad = []
             for data, v in zip(grad_in_data, op.vars_in):
+                var_tag = None
+                if (full_spec := f"{op.name}:{v.tag}") in tags_build_list:
+                    var_tag = full_spec
+                if v.tag in tags_build_list:
+                    if var_tag is None:
+                        var_tag = v.tag
+                    else:
+                        warn(f"Full tag specification {var_tag} shadows {v.tag}")
                 if not v.external:
                     taped_grad.append(data)
-                    if v.tag in tags_build_list or f"{op.name}:{v.tag}" in tags_build_list:
-                        warn("gradient of intermediate result cannot be collected")
+                    if var_tag is not None:
+                        if (data_out := out.get(v.tag)) is not None:
+                            tags_build_list[var_tag].append(data_out)
+                        else:
+                            warn("gradient of intermediate result cannot be collected")
                 else:
-                    if v.tag in tags_build_list:
-                        tags_build_list[v.tag].append(data)
-                    if (op_var := f"{op.name}:{v.tag}") in tags_build_list:
-                        tags_build_list[op_var].append(data)
+                    if var_tag in tags_build_list:
+                        tags_build_list[var_tag].append(data)
             if clear:
                 op.clear()
         if clear:

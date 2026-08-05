@@ -104,3 +104,37 @@ class FourierMulOp(MulOp):
         # otherwise iFFT is not applied to the result
         with self._fourier(ug_list[0]), self._fourier(ug_list[1]) if self._bi_dir else nullcontext():
             return super().gradient(*ug_list, out=out)
+
+
+class MSELossOp(Operation):
+    def __init__(self, beam, other_forward, other_backward):
+        self._beam = beam
+        # When other_forward / backward is missing, the gradient of the corresponding beam component is 0.
+        # For bi-direction, len(grads) = 2, otherwise 1 for forward only
+        self._grads = [
+            calc.reduce_mse_grad(b_arr, o_arr, output=beam.array_pool.get(), stream=beam.stream)
+            if o_arr is not None else beam.array_pool.get().fill(0, stream=beam.stream)
+            for b_arr, o_arr in [[beam.forward, other_forward], [beam.backward, other_backward]]
+            if b_arr is not None
+        ]
+
+        # Note that other_forward / backward is not marked as external args since getting the
+        # gradient for measurements seems meaningless
+        vars_in = [Var('uf')]
+        op_name = "mse_f"
+        if beam.backward is not None:
+            vars_in.append(Var('ub'))
+            op_name = "mse_fb"
+        super().__init__(vars_in, [], op_name)
+
+    def gradient(self, out=None):
+        if out:  # copy and replace the array
+            if 'uf' in out:
+                if out['uf'] is None:
+                    out['uf'] = self._beam.array_pool.get()
+                out['uf'].set_async(self._grads[0], stream=self._beam.stream)
+            if 'ub' in out:
+                if out['ub'] is None:
+                    out['ub'] = self._beam.array_pool.get()
+                out['ub'].set_async(self._grads[1], stream=self._beam.stream)
+        return self._grads

@@ -20,7 +20,7 @@ ssnp.config.set(xyz=(0.1, 0.2, 0.3), lambda0=0.632)
 class TestBeamSetUp(TestCase):
     def setUp(self):
         self.ones_cpu = np.ones(dtype=np.complex128, shape=(128, 128))
-        self.ones_gpu = pycuda.gpuarray.to_gpu(self.ones_cpu)
+        self.ones_gpu = gpuarray.to_gpu(self.ones_cpu)
 
     def test_defaults(self):
         beam = BeamArray(self.ones_gpu)
@@ -147,6 +147,7 @@ class TestBeamArraySingle(TestCase):
             meas_gpu = gpuarray.to_gpu(meas)
             with self.beam.track():
                 self.beam.merge_prop()
+                self.beam *= 2
                 loss = self.beam.mse_loss(meas_gpu)
             cmplx_field = self.beam.forward.get()
             if meas.dtype == np.complex128:
@@ -156,12 +157,12 @@ class TestBeamArraySingle(TestCase):
             else:
                 self.fail(f"bad meas type {meas.dtype}")
             self.assertAlmostEqual(loss, np.sum(diff ** 2) / meas.size)
-            grad = self.beam.tape.collect_gradient(['change:u1_in', 'change:u2_in'])
-            self.assertEqual(len(grad['change:u1_in']), 1)
-            ufg = grad['change:u1_in'][0].get()
+            grad = self.beam.tape.collect_gradient(['mse_fb:uf', 'mse_fb:ub'])
+            self.assertEqual(len(grad['mse_fb:uf']), 1)
+            ufg = grad['mse_fb:uf'][0].get()
             self.assertArrayEqual(ufg, _gradient_cpu(cmplx_field, meas), DELTA)
-            self.assertEqual(len(grad['change:u2_in']), 1)
-            ubg = grad['change:u2_in'][0].get()
+            self.assertEqual(len(grad['mse_fb:ub']), 1)
+            ubg = grad['mse_fb:ub'][0].get()
             self.assertArrayEqual(ubg, np.zeros_like(ubg), DELTA)
 
         # make forward only beam
