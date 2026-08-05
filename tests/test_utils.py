@@ -166,25 +166,39 @@ class TestManagedArrayPool(TestCase):
         self.assertEqual(id(a.__wrapped__), arr_addr)
         self.assertIsInstance(a, MockArray)
         self.assertIsInstance(a, ManagedObj)
-        a = []
-        a.append(array_pool.get())
+        del a
+        a = [array_pool.get()]
         self.assertEqual(id(a[0].__wrapped__), arr_addr)
-
-        # More recycle
         del a
         self.assertEqual(len(array_pool._pool), 1)
         self.assertEqual(array_pool.allocated_count, 1)
         self.assertEqual(MockArray.id_counter, 1)
         self.assertEqual(MockArray.freed_obj, 0)
-        del array_pool
+        a = [array_pool.get()]
+        b = a[0]
+        arr = a[0].extract()
+        self.assertEqual(id(arr), arr_addr)
+        self.assertIs(b.__wrapped__, ManagedObj.DISPOSED)
+        self.assertEqual(MockArray.freed_obj, 0)
+        del arr
         self.assertEqual(MockArray.freed_obj, 1)
+
+        # More recycle
+        a = array_pool.get()
+        del a
+        self.assertEqual(len(array_pool._pool), 1)
+        self.assertEqual(array_pool.allocated_count, 2)
+        self.assertEqual(MockArray.id_counter, 2)
+        self.assertEqual(MockArray.freed_obj, 1)
+        del array_pool
+        self.assertEqual(MockArray.freed_obj, 2)
         array_pool = ManagedArrayPool(arr_proto, MockArray.empty_like, unique_id=lambda arr: arr.unique_id)
         a = array_pool.get()
         del array_pool
-        self.assertEqual(MockArray.id_counter, 2)
-        self.assertEqual(MockArray.freed_obj, 1)
-        del a
+        self.assertEqual(MockArray.id_counter, 3)
         self.assertEqual(MockArray.freed_obj, 2)
+        del a
+        self.assertEqual(MockArray.freed_obj, 3)
 
         # Test manage
         raw_arr = MockArray([1024, 1024], float)

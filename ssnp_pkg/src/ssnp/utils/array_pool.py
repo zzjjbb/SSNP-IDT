@@ -120,6 +120,16 @@ class ManagedObj(BaseObjectProxy):
         self._self_finalizer()
         self.__wrapped__ = self.DISPOSED
 
+    def extract(self):
+        """
+        Take the wrapped object out and invalidate the proxy instance
+        :return: the wrapped object
+        """
+        obj = self.__wrapped__
+        self.__wrapped__ = self.DISPOSED
+        self._self_finalizer.detach()
+        return obj
+
     def __repr__(self):
         return f"{type(self).__qualname__}({self.__wrapped__!r})"
 
