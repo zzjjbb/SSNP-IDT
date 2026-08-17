@@ -47,7 +47,6 @@ class MulOp(Operation):
                 # ug[1] * conj(u2_save) -> u2_save, then added to grad_other
                 u2_var = self.vars_in[1]
                 grad_other += calc.u_mul(ug[1], u2_var.data, out=u2_var.data, conj=True, stream=self._beam.stream)
-                u2_var.data.dispose()
                 u2_var.data = None
             self._taped_in_all_saved = False
             # sum axis for grad_other if doing broadcast in forward
@@ -81,12 +80,6 @@ class MulOp(Operation):
         grad = [calc.u_mul(ug_i, self._other, conj=True, stream=self._beam.stream) for ug_i in ug]
         grad.append(grad_other)
         return grad
-
-    def clear(self):
-        if (u1_save := self.vars_in[0].data) is not None:
-            u1_save.dispose()
-        if self._bi_dir and (u2_save := self.vars_in[1].data) is not None:
-            u2_save.dispose()
 
 
 class FourierMulOp(MulOp):

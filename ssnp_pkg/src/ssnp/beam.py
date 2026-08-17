@@ -496,12 +496,8 @@ class BeamArray:
             calc.bpm_step(u_in.data, dz, n_data, output=u_return.data, config=self._config, stream=self.stream)
             return u_return
 
-        def clear():
-            if u_out.has_data():
-                u_out.data.dispose()
-
         op = Operation(vars_in, u_out, "bpm")
-        op.set_funcs(forward, gradient, clear)
+        op.set_funcs(forward, gradient)
         return op
 
     def _ssnp_op(self, u_out, n_data, dz):
@@ -535,16 +531,11 @@ class BeamArray:
                            config=self._config, stream=self.stream)
             return u_return
 
-        def clear():
-            for v in u_out:
-                if v.has_data():
-                    v.data.dispose()
-
         vars_in = [Var('u_in'), Var('ud_in')]
         if n_data is not None:
             vars_in.append(Var('n', n_data, external=True))
         op = Operation(vars_in, u_out, "ssnp")
-        op.set_funcs(forward, gradient, clear)
+        op.set_funcs(forward, gradient)
         return op
 
     def _change_op(self, vars_in, vars_out):
@@ -572,7 +563,7 @@ class BeamArray:
                     arr_out.append(go)
             return arr_out + [self.array_pool.get().fill(0) for _ in range(li - lo)]
 
-        # TODO: fix forward & clear
+        # TODO: fix forward
         # def forward(*v_in):
         #     for v in v_in[lo:]:
         #         if not v.bound:
@@ -582,5 +573,4 @@ class BeamArray:
         li, lo = len(vars_in), len(vars_out)
         op = Operation(vars_in, vars_out, "change")
         op.gradient = gradient
-        # op.set_funcs(forward, gradient, clear)
         return op

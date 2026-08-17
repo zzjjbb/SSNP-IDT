@@ -26,11 +26,6 @@ class Variable:
     external: bool = False
     bound: bool = False
 
-    # Deprecated: confusing to test if data is saved
-    def __bool__(self):
-        warn("Variable.__bool__ is deprecated, use Variable.has_data() instead", DeprecationWarning, stacklevel=2)
-        return self.has_data()
-
     def has_data(self):
         return self.data is not None
 
@@ -126,7 +121,11 @@ class Operation:
         raise NotImplementedError(f"'{self.name}' operation cannot backprop")
 
     def clear(self):
-        pass
+        for v in self.vars_in:
+            v.data = None
+        for v in self.vars_out:
+            v.data = None
+        self.update_saved()
 
 
 # class CombinedOperation(Operation):
