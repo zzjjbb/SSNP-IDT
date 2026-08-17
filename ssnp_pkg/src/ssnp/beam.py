@@ -344,10 +344,11 @@ class BeamArray:
             raise TypeError(f"{type(self).__name__}.mse_loss takes at least 1 argument")
         # mse (and grad) computation
         loss = 0
+        tmp = self.array_pool.get()
         if forward is not None:
-            loss += calc.reduce_mse(self.forward, forward, self.stream)
+            loss += calc.reduce_mse(self.forward, forward, stream=self.stream, temp_arr=tmp)
         if backward is not None:
-            loss += calc.reduce_mse(self.backward, backward, self.stream)
+            loss += calc.reduce_mse(self.backward, backward, stream=self.stream, temp_arr=tmp)
         # append mse op to tape
         if self._track:
             self.tape.append(MSELossOp(self, forward, backward))
